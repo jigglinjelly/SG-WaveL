@@ -60,6 +60,13 @@
             overflow: hidden;
             box-shadow: inset 0 5px 10px rgba(0, 0, 0, 0.1);
             margin: 0 auto;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            transition: background-color 0.2s ease;
+        }
+
+        .board.dragging {
+            background-color: rgba(224, 224, 224, 0.8);
         }
 
         .target-area {
@@ -70,25 +77,36 @@
             overflow: hidden;
         }
 
-        .needle-container {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 40px;
-            height: 180px;
-            transform: translateX(-50%);
-            cursor: pointer;
-        }
-
         .needle {
             position: absolute;
             bottom: 0;
             left: 50%;
-            width: 4px;
+            width: 6px;
             height: 200px;
             background-color: #ff4757;
             transform-origin: bottom center;
             transition: transform 0.2s ease;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .needle.dragging {
+            background-color: #ff3838;
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+        }
+
+        .needle::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 8px;
+            background-color: #ff4757;
+            border-radius: 4px 4px 0 0;
         }
 
         .clues-container {
@@ -216,6 +234,31 @@
             text-align: center;
         }
 
+        #newGameButton {
+            background-color: #ff4757 !important;
+            transition: all 0.3s ease;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        #newGameButton:hover {
+            background-color: #ff3838 !important;
+            transform: scale(1.05);
+        }
+
+        #rerollCategoryButton {
+            background-color: #ffa502;
+        }
+
+        #rerollCategoryButton:hover {
+            background-color: #e67e22;
+        }
+
+        #rerollCategoryButton:disabled {
+            background-color: #a4b0be;
+            cursor: not-allowed;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -255,16 +298,8 @@
         #startGame {
             margin-top: 1rem;
         }
-        #newGameButton {
-            background-color: #ff4757 !important;
-            transition: all 0.3s ease;
-        }
 
-        #newGameButton:hover {
-            background-color: #ff3838 !important;
-            transform: scale(1.05);
-        }
-                .modal-content {
+        .modal-content {
             background-color: #ffffff;
             margin: 10% auto;
             padding: 30px;
@@ -368,7 +403,7 @@
 
             .needle {
                 height: 130px;
-                left: calc(50% - 4px);
+                left: calc(50% - 3px);
             }
 
             .title {
@@ -419,7 +454,7 @@
                     </ul>
                     <li>Now it's up to the Psychic's team to discuss the
                         clue and decide where to turn the dial</li>
-                    <li>Click and drag the needle to set your guess.</li>
+                    <li>Click anywhere on the semicircle to set your guess.</li>
                     <li>Click "Submit Answer" to lock in your guess.</li>
                     <li>Scoring:
                         <ul>
@@ -450,11 +485,9 @@
 
     <div class="game-container">
         <h1 class="title">Wavelength</h1>
-        <div class="board">
+        <div class="board" id="board">
             <div class="target-area" id="targetArea"></div>
-            <div class="needle-container" id="needleContainer">
-                <div class="needle" id="needle"></div>
-            </div>
+            <div class="needle" id="needle"></div>
         </div>
         <div class="clues-container">
             <div class="clue" id="leftClue"></div>
@@ -468,9 +501,11 @@
             <button id="readyToRevealButton" style="display: none;">Ready to Reveal Target</button>
             <button id="hideTargetButton" style="display: none;">I'm Ready to Give Clue, Hide the Board</button>
             <button id="submitAnswerButton" style="display: none;">Submit Answer</button>
+            <button id="rerollCategoryButton" style="display: none;">Reroll Category (2 left)</button>
             <button id="nextRoundButton" style="display: none;">Next Round</button>
-            <button id="rerollCategoryButton" style="display: none; background-color: #ffa502;">Reroll Category</button>
-            <button id="newGameButton" style="background-color: red; color: white; display: none; padding: 8px 16px; font-size: 14px;">Reset Game</button>
+            <button id="newGameButton" style="display: none;">
+                New Game
+            </button>
         </div>
         
         <div id="score"></div>
@@ -479,7 +514,7 @@
 
     <script>
         // DOM elements
-        const needleContainer = document.getElementById("needleContainer");
+        const board = document.getElementById("board");
         const needle = document.getElementById("needle");
         const targetArea = document.getElementById("targetArea");
         const nextRoundButton = document.getElementById("nextRoundButton");
@@ -490,6 +525,7 @@
         const readyToRevealButton = document.getElementById("readyToRevealButton");
         const hideTargetButton = document.getElementById("hideTargetButton");
         const submitAnswerButton = document.getElementById("submitAnswerButton");
+        const rerollCategoryButton = document.getElementById("rerollCategoryButton");
 
         // Game state variables
         let isDragging = false;
@@ -497,7 +533,7 @@
         let canMoveNeedle = false;
         let gameStep = 0; // 0: initial, 1: clue giver viewing, 2: guesser turn, 3: results
         let rerollsUsed = 0;
-        const MAX_REROLLS = 5; // Limit to 5 rerolls per round
+        const MAX_REROLLS = 2;
 
         const teamSetup = document.getElementById('teamSetup');
         const teamCount = document.getElementById('teamCount');
@@ -642,7 +678,7 @@
             ["Procrastinator", "Hyper Planner"],
             ["Messy Desk", "Label Everything"],
             ["Blur Like Sotong", "Sharp Like Chili Padi"]
-        ];
+ ];
 
         // Team setup functions
         teamCount.addEventListener('change', updateTeamInputs);
@@ -667,7 +703,8 @@
             ).join('');
             totalScoreElement.innerHTML = scoreHTML;
         }
-        // functions to reroll
+
+        // Reroll functions
         function rerollCategory() {
             if (rerollsUsed < MAX_REROLLS) {
                 rerollsUsed++;
@@ -677,35 +714,21 @@
         }
 
         function updateRerollButton() {
-            const rerollButton = document.getElementById('rerollCategoryButton');
             const remainingRerolls = MAX_REROLLS - rerollsUsed;
-            rerollButton.textContent = `Reroll Category (${remainingRerolls} left)`;
+            rerollCategoryButton.textContent = `Reroll Category (${remainingRerolls} left)`;
             
             if (remainingRerolls <= 0) {
-                rerollButton.disabled = true;
-                rerollButton.style.backgroundColor = '#a4b0be';
+                rerollCategoryButton.disabled = true;
             }
         }
 
         function resetRerolls() {
             rerollsUsed = 0;
+            rerollCategoryButton.disabled = false;
             updateRerollButton();
         }
-        // Reset  game button
-        function confirmNewGame() {
-            const confirmed = confirm("Are you sure you want to start a new game? All current progress will be lost!");
-            if (confirmed) {
-                teams.forEach(team => team.score = 0);
-                currentTeamIndex = 0;
-                setTargetArea();
-                setRandomClues();
-                resetRerolls();
-                gameStep = 0;
-                updateGameStatus();
-                updateScoreDisplay();
-            }
-        }
-                // Game flow functions
+
+        // Game flow functions
         function updateGameStatus() {
             const currentTeam = teams[currentTeamIndex];
             
@@ -717,10 +740,10 @@
                     readyToRevealButton.style.display = 'inline-block';
                     hideTargetButton.style.display = 'none';
                     submitAnswerButton.style.display = 'none';
+                    rerollCategoryButton.style.display = 'none';
                     nextRoundButton.style.display = 'none';
                     newGameButton.style.display = 'none';
                     canMoveNeedle = false;
-                    rerollCategoryButton.style.display = 'inline-block';
                     break;
                     
                 case 1: // Clue giver viewing target
@@ -730,11 +753,11 @@
                     readyToRevealButton.style.display = 'none';
                     hideTargetButton.style.display = 'inline-block';
                     submitAnswerButton.style.display = 'none';
-                    rerollCategoryButton.style.display = 'inline-block'; // Show reroll button
+                    rerollCategoryButton.style.display = 'inline-block';
                     nextRoundButton.style.display = 'none';
                     newGameButton.style.display = 'none';
                     canMoveNeedle = false;
-                    updateRerollButton(); // Update reroll count display
+                    updateRerollButton();
                     break;
                     
                 case 2: // Guesser's turn
@@ -744,22 +767,21 @@
                     readyToRevealButton.style.display = 'none';
                     hideTargetButton.style.display = 'none';
                     submitAnswerButton.style.display = 'inline-block';
+                    rerollCategoryButton.style.display = 'none';
                     nextRoundButton.style.display = 'none';
                     newGameButton.style.display = 'none';
                     canMoveNeedle = true;
-                    rerollCategoryButton.style.display = 'none';
                     break;
                     
                 case 3: // Results
-                    // Status message is set when calculating score
                     targetArea.style.display = 'block';
                     needle.style.display = 'block';
                     readyToRevealButton.style.display = 'none';
                     hideTargetButton.style.display = 'none';
                     submitAnswerButton.style.display = 'none';
+                    rerollCategoryButton.style.display = 'none';
                     nextRoundButton.style.display = 'inline-block';
                     newGameButton.style.display = 'inline-block';
-                    rerollCategoryButton.style.display = 'none';
                     canMoveNeedle = false;
                     break;
             }
@@ -813,13 +835,17 @@
         function handleStart(e) {
             if (!canMoveNeedle) return;
             isDragging = true;
+            board.classList.add('dragging');
+            needle.classList.add('dragging');
+            handleMove(e);
             e.preventDefault();
         }
 
         function handleMove(e) {
             if (!isDragging || !canMoveNeedle) return;
             e.preventDefault();
-            const rect = needleContainer.getBoundingClientRect();
+            
+            const rect = board.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.bottom;
 
@@ -832,17 +858,41 @@
                 clientY = e.clientY;
             }
 
-            const angle = (Math.atan2(clientX - centerX, centerY - clientY) * 180) / Math.PI;
-            const clampedAngle = Math.max(-90, Math.min(90, angle));
-            needle.style.transform = `rotate(${clampedAngle}deg)`;
+            const angle = calculateAngle(clientX, clientY, centerX, centerY);
+            needle.style.transform = `rotate(${angle}deg)`;
+        }
+
+        function calculateAngle(clientX, clientY, centerX, centerY) {
+            const deltaX = clientX - centerX;
+            const deltaY = centerY - clientY;
+            
+            let angle = (Math.atan2(deltaX, deltaY) * 180) / Math.PI;
+            angle = Math.max(-90, Math.min(90, angle));
+            
+            return angle;
         }
 
         function handleEnd() {
             isDragging = false;
+            board.classList.remove('dragging');
+            needle.classList.remove('dragging');
         }
-        // Reroll category button
-        const rerollCategoryButton = document.getElementById('rerollCategoryButton');
-        rerollCategoryButton.addEventListener('click', rerollCategory);
+
+        // Confirmation for new game
+        function confirmNewGame() {
+            const confirmed = confirm("Are you sure you want to start a new game? All current progress will be lost!");
+            if (confirmed) {
+                teams.forEach(team => team.score = 0);
+                currentTeamIndex = 0;
+                setTargetArea();
+                setRandomClues();
+                resetRerolls();
+                gameStep = 0;
+                updateGameStatus();
+                updateScoreDisplay();
+            }
+        }
+
         // Event listeners for game flow buttons
         readyToRevealButton.addEventListener('click', () => {
             gameStep = 1;
@@ -871,28 +921,19 @@
             }
         });
 
+        rerollCategoryButton.addEventListener('click', rerollCategory);
+
         nextRoundButton.addEventListener("click", () => {
             setTargetArea();
             setRandomClues();
             currentTeamIndex = (currentTeamIndex + 1) % teams.length;
-            resetRerolls(); // Reset reroll count for new round
+            resetRerolls();
             gameStep = 0;
             updateGameStatus();
             updateScoreDisplay();
         });
 
         newGameButton.addEventListener("click", confirmNewGame);
-
-        /*newGameButton.addEventListener("click", () => {
-            teams.forEach(team => team.score = 0);
-            currentTeamIndex = 0;
-            setTargetArea();
-            setRandomClues();
-            resetRerolls(); // Reset reroll count for new round
-            gameStep = 0;
-            updateGameStatus();
-            updateScoreDisplay();
-        });*/
 
         // Start game event listener
         startGameButton.addEventListener('click', () => {
@@ -904,7 +945,7 @@
             gameContainer.style.display = 'block';
             setTargetArea();
             setRandomClues();
-            resetRerolls(); // Reset reroll count for new game
+            resetRerolls();
             gameStep = 0;
             updateGameStatus();
             updateScoreDisplay();
@@ -933,10 +974,10 @@
         }
 
         // Needle control event listeners
-        needleContainer.addEventListener("mousedown", handleStart);
+        board.addEventListener("mousedown", handleStart);
         document.addEventListener("mousemove", handleMove);
         document.addEventListener("mouseup", handleEnd);
-        needleContainer.addEventListener("touchstart", handleStart);
+        board.addEventListener("touchstart", handleStart);
         document.addEventListener("touchmove", handleMove);
         document.addEventListener("touchend", handleEnd);
 
